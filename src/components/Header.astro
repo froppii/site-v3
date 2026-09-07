@@ -16,13 +16,15 @@ if (fs.existsSync(headersDir)) {
 const random = images[Math.floor(Math.random() * images.length)];
 ---
 
-<img src={`/header/${random}`} alt="header image" class="header" />
+<header class="header">
+    <h1>thingy</h1>
+</header>
 
 <style>
     .header {
         width: 100%;
-        height: 230px;
+        height: 50px;
         object-fit: cover;
-        pointer-event: none;
+        pointer-events: none;
     }
 </style>
