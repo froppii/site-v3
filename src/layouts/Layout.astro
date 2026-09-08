@@ -1,5 +1,6 @@
 ---
 import Header from "../components/Header.astro";
+import Background from "../components/Background.astro"
 import "../styles/global.css";
 
 const {title} = Astro.props;
@@ -12,6 +13,7 @@ const {title} = Astro.props;
         <meta name="viewport" content="width=device width" />
     </head>
     <body>
+        <Background />
         <Header />
         <main class="container">
             <slot />
@@ -24,11 +26,8 @@ const {title} = Astro.props;
 
 <script>
     window.addEventListener("mousemove", (event) => {
-        const xPercent = (event.clientX / window.innerWidth - 0.5) * 40
-        const yPercent = (event.clientY / window.innerHeight - 0.5) * 40
-
-        document.body.style.setProperty("--mouse-x", `${xPercent}px`);
-        document.body.style.setProperty("--mouse-y", `${yPercent}px`);
+        document.body.style.setProperty("--mouse-x", `${event.clientX}px`);
+        document.body.style.setProperty("--mouse-y", `${event.clientY}px`);
     });
 </script>
 

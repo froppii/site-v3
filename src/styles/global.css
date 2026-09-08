@@ -6,8 +6,8 @@
 
 :root {
     --bg-color: #222C65;
-    --mouse-x: 0px;
-    --mouse-y: 0px;
+    --mouse-x: 50vw;
+    --mouse-y: 50vh;
 }
 
 html, body {
@@ -26,19 +26,17 @@ body {
     overflow-x: hidden;
 }
 
-body::before {
+body::after {
     content: "";
     position: fixed;
-    inset: -20px;
+    inset: 0;
     pointer-events: none;
     z-index: 0;
-    opacity: 0.7;
+    opacity: 0.4;
     mix-blend-mode: multiply;
     background-image: url("/noise.svg");
     background-size: 200px 200px;
     animation: grainMovement 0.6s steps(2) infinite;
-    transition: transform 0.15s ease-out;
-    transform: translate(var(--mouse-x), var(--mouse-y));
 }
 
 body > * {
