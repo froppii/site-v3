@@ -21,20 +21,69 @@
     const CHARS = ' ░▒▓█';
     const FONT_COLOR = 'rgba(255, 100, 60, 0.5)';
     const NOISE_SCALE = 0.08;
-    const TIME_SPEED =0.0002;
+    const TIME_SPEED = 0.0002;
+
+    const SMOKE_COLOR = 'rgba(255, 130, 90, 0.6)';
+    const SMOKE_HIGHLIGHT = 0.35;
+    const MIN_MOVE = 0.15;
+    const STEP = 0.8;
+    const CLUSTER = 10;
+    const SPREAD = 4;
+    const INHERIT = 0.06;
+    const SWIRL = 5;
+    const BUOYANCY = 10;
+    const DRAG = 2.5;
+    const LIFE = [0.8, 1.6];
+    const STRENGTH = 0.55;
+    const MAX_PARTICLES = 600;
+
+    const SPARK_COLOR = 'rgba(255, 210, 140, 0.95)';
+    const SPARK_CHANCE = 0.12;
+    const SPARK_SPEED = [7, 15];
+    const SPARK_LIFE = [0.35, 0.8];
+    const SPARK_CHARS = ['·', '+', '*'];
+
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     let cols = 0, rows = 0;
     let width = 0, height = 0;
+
+    let density = new Float32Array(0);
+    let sparkLife = new Float32Array(0);
 
     function resize() {
         width = canvas.width = window.innerWidth;
         height = canvas.height = window.innerHeight;
         cols = Math.ceil(width / CHAR_SIZE);
         rows = Math.ceil(height / CHAR_SIZE);
+
+        const size = cols * rows;
+        density = new Float32Array(size);
+        sparkLife = new Float32Array(size);
     }
 
     window.addEventListener('resize', resize);
     resize();
+
+    const mouse = {
+        x: 0, y: 0,
+        prevX: 0, prevY: 0,
+        active: false, fresh: false
+    };
+
+    window.addEventListener('pointermove', (e) => {
+        mouse.x = e.clientX / CHAR_SIZE;
+        mouse.y = e.clientY / CHAR_SIZE;
+        if (!mouse.active) {
+            mouse.prevX = mouse.x;
+            mouse.prevY = mouse.y;
+            mouse.active = true
+        }
+    });
+    
+    const deactivate = () => (mouse.active = false);
+    document.documentElement.addEventListener('mouseleave', deactivate);
+    window.addEventListener('blur', deactivate);
 
     function hash(x: number, y: number) {
         const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453123;
@@ -50,35 +99,178 @@
         const c = hash(xi, yi + 1);
         const d = hash(xi + 1, yi + 1);
 
-        const u = xf * xf * (3 - 2 + xf);
+        const u = xf * xf * (3 - 2 * xf);
         const v = yf * yf * (3 - 2 * yf);
 
         return a * (1 - u) * (1 - v) + b * u * (1 - v) + c * (1 - u) * v + d * u * v;
     }
 
+    const rand = (min: number, max: number) => min + Math.random() * (max - min);
+    const jitter = () => Math.random() * 2 - 1;
+
+    type Particle = { x: number; y: number; vx: number; vy: number; life: number; max: number; spark: boolean };
+    const particles: Particle[] = [];
+
+    function spawn(x: number, y: number, vx: number, vy: number, spark: boolean) {
+        if (particles.length >= MAX_PARTICLES) return;
+        const life = spark ? rand(SPARK_LIFE[0], SPARK_LIFE[1]) : rand(LIFE[0], LIFE[1]);
+        particles.push({ x, y, vx, vy, life, max: life, spark})
+    }
+
+    function emit(dt: number) {
+        if (!mouse.active || reducedMotion) return;
+
+        const dx = mouse.x - mouse.prevX;
+        const dy = mouse.y - mouse.prevY;
+        const dist = Math.hypot(dx, dy);
+        if (dist < MIN_MOVE) return;
+        
+        const mvx = dx / dt, mvy = dy / dt;
+        const steps = Math.min(24, Math.max(1, Math.floor(dist / STEP)));
+
+        for (let s = 1; s <= steps; s++) {
+            const k = s / steps;
+            const px = mouse.prevX + dx * k;
+            const py = mouse.prevY + dy * k;
+
+            for (let c = 0; c < CLUSTER; c++) {
+                spawn(
+                    px + jitter() * SPREAD,
+                    py + jitter() * SPREAD,
+                    mvx * INHERIT + jitter() * 1.5,
+                    mvy * INHERIT + jitter() * 1.5,
+                    false,
+                );
+            }
+
+            if (Math.random() < SPARK_CHANCE) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = rand(SPARK_SPEED[0], SPARK_SPEED[1]);
+                spawn(px, py, mvx * 0.3 + Math.cos(angle) * speed, mvy * 0.3 + Math.sin(angle) * speed, true);
+            }
+        }
+        
+        mouse.prevX = mouse.x;
+        mouse.prevY = mouse.y
+    }
+
+    function updateParticles(dt: number, t: number) {
+        let alive = 0;
+        for (let i = 0; i < particles.length; i++) {
+            const p = particles[i];
+            const angle = noise2D(p.x * 0.09 + 7, p.y * 0.09 - t * 0.25) * Math.PI * 2;
+            const swirl = p.spark ? SWIRL * 0.3 : SWIRL;
+            const lift = p.spark ? BUOYANCY * 0.3 : BUOYANCY;
+            const drag = p.spark ? DRAG * 0.5 : DRAG;
+
+            p.vx += Math.cos(angle) * swirl * dt;
+            p.vy += Math.sin(angle) * swirl * dt - lift * dt;
+            p.vx -= p.vx * drag * dt;
+            p.vy -= p.vy * drag * dt;
+            p.x += p.vx * dt;
+            p.y += p.vy * dt;
+            p.life -= dt;
+
+            const onScreen = p.x > -3 && p.x < cols + 3 && p.y > -3 && p.y < rows + 3;
+            if (p.life > 0 && onScreen) particles[alive++] = p;
+        }
+        particles.length = alive;
+    }
+
+    function addDensity(x: number, y: number, amount: number) {
+        if (x < 0 || y < 0 || x >= cols || y >= rows) return;
+        density[y * cols + x] += amount;
+    }
+
+    function splat() {
+        density.fill(0);
+        sparkLife.fill(0);
+
+        for (const p of particles) {
+            const fade = p.life / p.max;
+            const x = Math.floor(p.x), y = Math.floor(p.y);
+
+            if (p.spark) {
+                if (x >= 0 && y >= 0 && x < cols && y < rows) {
+                    const i = y * cols + x;
+                    sparkLife[i] = Math.max(sparkLife[i], fade);
+                }
+                continue;
+            }
+            
+            const a = fade * fade * STRENGTH;
+            const fx = p.x - x, fy = p.y - y;
+            addDensity(x, y, (1 - fx) * (1 - fy) * a);
+            addDensity(x + 1, y, fx * (1 - fy) * a);
+            addDensity(x, y + 1, (1 - fx) * fy * a);
+            addDensity(x + 1, y + 1, fx * fy * a);
+
+            const h = a * 0.25;
+            addDensity(x - 1, y, h);
+            addDensity(x + 2, y, h);
+            addDensity(x, y - 1, h);
+            addDensity(x, y + 2, h);
+        }
+    }
+
+    let last = performance.now();
+    const smokeCells: number[] = [];
+    const sparkCells: number[] = [];
+
     function draw(time: number) {
+        const dt = Math.min(0.05, Math.max(0.001, (time - last) / 1000));
+        last = time;
+        const t = time * TIME_SPEED;
+
+        emit(dt);
+        updateParticles(dt, time / 1000);
+        splat();
+
         ctx.clearRect(0, 0, width, height);
         ctx.font = `${CHAR_SIZE}px monospace`;
         ctx.textBaseline = 'top';
-        ctx.fillStyle = FONT_COLOR;
 
-        const t = time * TIME_SPEED;
+        ctx.fillStyle = FONT_COLOR;
+        smokeCells.length = 0;
+        sparkCells.length = 0;
 
         for (let row = 0; row < rows; row++) {
             for (let col = 0; col < cols; col++) {
+                const i = row * cols + col;
+
+                if (sparkLife[i] > 0) {
+                    sparkCells.push(i);
+                    continue;
+                }
+
                 const nx = col * NOISE_SCALE;
                 const ny = row * NOISE_SCALE;
-                const warp = noise2D (nx + t, ny) * 2;
-                const n = noise2D (nx + warp, ny + t);
+                const warp = noise2D(nx + t, ny) * 2;
+                const smoke = density[i];
+                const n = Math.min(1, noise2D(nx + warp, ny + t) + smoke);
+                const charIndex = Math.min(CHARS.length - 1, Math.floor(n * CHARS.length));
+                if (charIndex === 0) continue;
 
-                const charIndex = Math.floor(n * (CHARS.length - 1));
-                const char = CHARS[charIndex];
-
-                if (char !== '') {
-                    ctx.fillText(char, col * CHAR_SIZE, row * CHAR_SIZE);
+                if (smoke > SMOKE_HIGHLIGHT) {
+                    smokeCells.push(i, charIndex);
+                    continue;
                 }
+                ctx.fillText(CHARS[charIndex], col * CHAR_SIZE, row * CHAR_SIZE);
             }
-        } 
+        }
+
+        ctx.fillStyle = SMOKE_COLOR;
+        for (let k = 0; k < smokeCells.length; k += 2) {
+            const i = smokeCells[k];
+            ctx.fillText(CHARS[smokeCells[k + 1]], (i % cols) * CHAR_SIZE, Math.floor(i / cols) * CHAR_SIZE);
+        }
+
+        ctx.fillStyle = SPARK_COLOR;
+        for (const i of sparkCells) {
+            const ch = SPARK_CHARS[Math.min(SPARK_CHARS.length - 1, Math.floor(sparkLife[i] * SPARK_CHARS.length))];
+            ctx.fillText(ch, (i % cols) * CHAR_SIZE, Math.floor(i / cols) * CHAR_SIZE);
+        }
+
         requestAnimationFrame(draw);
     }
     requestAnimationFrame(draw);
